@@ -109,8 +109,10 @@ def main():
             st.stop()
 
         with st.spinner(f"🧠 {model_choice} is generating your meme..."):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                meme_url = asyncio.run(generate_meme(query, model_choice, api_key))
+                meme_url = loop.run_until_complete(generate_meme(query, model_choice, api_key))
                 
                 if meme_url:
                     st.success("✅ Meme Generated Successfully!")
@@ -125,6 +127,8 @@ def main():
             except Exception as e:
                 st.error(f"Error: {str(e)}")
                 st.info("💡 If using OpenAI, ensure your account has GPT-4o access")
+            finally:
+                loop.close()
 
 if __name__ == '__main__':
     main()
