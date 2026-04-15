@@ -28,16 +28,18 @@ async def generate_meme(query: str, model_choice: str, api_key: str) -> None:
         )
 
     task_description = (
-        "You are a meme generator expert. You are given a query and you need to generate a meme for it.\n"
-        "1. Go to https://imgflip.com/memetemplates \n"
-        "2. Click on the Search bar in the middle and search for ONLY ONE MAIN ACTION VERB (like 'bully', 'laugh', 'cry') in this query: '{0}'\n"
-        "3. Choose any meme template that metaphorically fits the meme topic: '{0}'\n"
-        "   by clicking on the 'Add Caption' button below it\n"
-        "4. Write a Top Text (setup/context) and Bottom Text (punchline/outcome) related to '{0}'.\n" 
-        "5. Check the preview making sure it is funny and a meaningful meme. Adjust text directly if needed. \n"
-        "6. Look at the meme and text on it, if it doesnt make sense, PLEASE retry by filling the text boxes with different text. \n"
-        "7. Click on the Generate meme button to generate the meme\n"
-        "8. Copy the image link and give it as the output\n"
+        "You are a meme generator. Generate a meme for this topic: '{0}'\n\n"
+        "Steps:\n"
+        "1. Go to https://imgflip.com/memetemplates\n"
+        "2. In the search box, type a single keyword related to '{0}' and press Enter\n"
+        "3. Click the 'Add Caption' button under any meme template that fits the topic\n"
+        "4. Fill in the Top Text with a setup line and Bottom Text with a punchline about '{0}'\n"
+        "5. Click the 'Generate Meme' button\n"
+        "6. After the meme is generated, find the meme image URL on the page.\n"
+        "   The URL will look like: https://i.imgflip.com/XXXXX.jpg or https://imgflip.com/i/XXXXX\n"
+        "7. Return ONLY the final meme URL as your answer. Example output: https://i.imgflip.com/abc123.jpg\n\n"
+        "If the search returns no results, go back and try a simpler or different keyword.\n"
+        "If the meme generation page does not load, try clicking 'Add Caption' on a popular template.\n"
     ).format(query)
 
     agent = Agent(
@@ -54,21 +56,49 @@ async def generate_meme(query: str, model_choice: str, api_key: str) -> None:
         # Extract final result from agent history
         final_result = history.final_result()
 
+        # Log the full agent result for debugging
+        print(f"[DEBUG] Agent final_result: {final_result!r}")
+
         if final_result is None:
-            print("Error: Agent returned no result - check API key and model availability")
+            print("[ERROR] Agent returned no result - check API key and model availability")
             return None
 
-        # Use regex to find the meme URL in the result
-        url_match = re.search(r'https://imgflip\.com/i/(\w+)', final_result)
-        if not url_match:
-            print(f"Error: Could not extract meme URL from agent result: {final_result}")
-            return None
+        # Try multiple URL patterns to handle different formats the agent may return
 
-        meme_id = url_match.group(1)
-        return f"https://i.imgflip.com/{meme_id}.jpg"
+        # Pattern 1: Direct image URL (https://i.imgflip.com/XXXXX.jpg/.png/.gif)
+        match = re.search(r'https?://i\.imgflip\.com/[\w/-]+(?:\.\w+)?', final_result)
+        if match:
+            url = match.group(0)
+            print(f"[DEBUG] Extracted image URL (pattern 1): {url}")
+            return url
+
+        # Pattern 2: Imgflip share page URL (https://imgflip.com/i/XXXXX)
+        match = re.search(r'https?://(?:www\.)?imgflip\.com/i/([\w-]+)', final_result)
+        if match:
+            meme_id = match.group(1)
+            url = f"https://i.imgflip.com/{meme_id}.jpg"
+            print(f"[DEBUG] Extracted share URL (pattern 2), built image URL: {url}")
+            return url
+
+        # Pattern 3: Any imgflip.com URL as a fallback (stops before whitespace or sentence punctuation)
+        match = re.search(r'https?://(?:www\.)?imgflip\.com/[^\s,)>"\']+', final_result)
+        if match:
+            url = match.group(0).rstrip('.')
+            print(f"[DEBUG] Extracted imgflip URL (pattern 3): {url}")
+            return url
+
+        # Pattern 4: Any http/https URL in the result (last-resort fallback)
+        match = re.search(r'https?://[^\s,)>"\']+', final_result)
+        if match:
+            url = match.group(0).rstrip('.')
+            print(f"[DEBUG] Extracted generic URL (pattern 4 fallback): {url}")
+            return url
+
+        print(f"[ERROR] Could not extract any URL from agent result: {final_result!r}")
+        return None
 
     except Exception as e:
-        print(f"Error extracting meme URL: {str(e)}")
+        print(f"[ERROR] Error extracting meme URL: {str(e)}")
         return None
 
 def main():
@@ -123,6 +153,7 @@ def main():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
+                st.info("🤖 Browser agent is navigating imgflip.com... This may take a minute.")
                 meme_url = loop.run_until_complete(generate_meme(query, model_choice, api_key))
                 
                 if meme_url:
@@ -133,7 +164,14 @@ def main():
                         **Embed URL:** `{meme_url}`
                     """)
                 else:
-                    st.error("❌ Failed to generate meme. Please try again with a different prompt.")
+                    st.error("❌ Failed to generate meme. The agent could not extract a valid image URL.")
+                    st.warning(
+                        "💡 **Troubleshooting tips:**\n"
+                        "- Check your API key is valid and has sufficient credits\n"
+                        "- Try a simpler or different meme prompt\n"
+                        "- If using Deepseek, note that vision is disabled — results may vary\n"
+                        "- Check the terminal/console for `[DEBUG]` and `[ERROR]` logs to see what the agent returned"
+                    )
                     
             except Exception as e:
                 st.error(f"Error: {str(e)}")
