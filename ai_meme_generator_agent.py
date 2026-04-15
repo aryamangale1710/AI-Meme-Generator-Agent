@@ -49,16 +49,27 @@ async def generate_meme(query: str, model_choice: str, api_key: str) -> None:
     )
 
     history = await agent.run()
-    
-    # Extract final result from agent history
-    final_result = history.final_result()
-    
-    # Use regex to find the meme URL in the result
-    url_match = re.search(r'https://imgflip\.com/i/(\w+)', final_result)
-    if url_match:
+
+    try:
+        # Extract final result from agent history
+        final_result = history.final_result()
+
+        if final_result is None:
+            print("Error: Agent returned no result - check API key and model availability")
+            return None
+
+        # Use regex to find the meme URL in the result
+        url_match = re.search(r'https://imgflip\.com/i/(\w+)', final_result)
+        if not url_match:
+            print(f"Error: Could not extract meme URL from agent result: {final_result}")
+            return None
+
         meme_id = url_match.group(1)
         return f"https://i.imgflip.com/{meme_id}.jpg"
-    return None
+
+    except Exception as e:
+        print(f"Error extracting meme URL: {str(e)}")
+        return None
 
 def main():
     # Custom CSS styling
